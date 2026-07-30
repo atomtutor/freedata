@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>우리만의 데이터쇼</title>
+  <link rel="stylesheet" as="style" crossorigin
+        href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+  <link rel="stylesheet" href="css/reset.css">
+  <link rel="stylesheet" href="css/theme.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/animations.css">
+</head>
+<body>
+  <header class="top">
+    <h1>우리만의 데이터쇼</h1>
+    <div class="inputs">
+      <textarea id="pasteArea" placeholder="구글 시트에서 복사한 데이터를 붙여넣으세요 (헤더 포함)"></textarea>
+      <div class="file-row">
+        <button id="applyPaste" class="btn">📋 붙여넣은 내용 적용하기</button>
+        <label class="btn secondary">CSV 파일 불러오기 <input id="fileInput" type="file" accept="text/csv" hidden></label>
+        <button id="loadFake" class="btn ghost">샘플 데이터 로드</button>
+        <div id="dataCount" class="data-count"></div>
+      </div>
+      <div id="pasteMsg" class="paste-msg"></div>
+      <div id="schemaPreview" class="schema-preview"></div>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button data-tab="overview" class="tab">데이터 한눈에</button>
+    <button data-tab="battle" class="tab active">가설 대결</button>
+    <button data-tab="match" class="tab">닮은꼴 찾기</button>
+  </nav>
+
+  <main id="app">
+    <section id="overview" class="tab-pane hidden"></section>
+    <section id="battle" class="tab-pane"></section>
+    <section id="match" class="tab-pane hidden"></section>
+  </main>
+
+  <script src="js/state.js"></script>
+  <script src="js/sound.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/tab-battle.js"></script>
+  <script src="js/tab-overview.js"></script>
+  <script src="js/tab-match.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

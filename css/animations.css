@@ -1,0 +1,22 @@
+@keyframes countUp{ from{ transform:translateY(10px); opacity:0; } to{ transform:none; opacity:1; } }
+
+@keyframes stampIn{
+  0%{ transform:scale(0) rotate(-20deg); opacity:0; }
+  70%{ transform:scale(1.12) rotate(6deg); }
+  100%{ transform:scale(1) rotate(0); opacity:1; }
+}
+
+@keyframes confettiFall{
+  0%{ transform:translateY(-20px) rotate(0deg); opacity:1; }
+  100%{ transform:translateY(340px) rotate(540deg); opacity:0; }
+}
+.confetti-piece{
+  position:absolute;
+  top:-20px;
+  width:10px;
+  height:10px;
+  border-radius:2px;
+  animation:confettiFall 1100ms ease-in forwards;
+}
+
+@keyframes fadeIn{ from{opacity:0;} to{opacity:1;} }
