@@ -8,7 +8,12 @@
 const ID_HEADER_RE = /(닉네임|이름|성명|name|nickname)/i;
 const TIME_HEADER_RE = /(타임스탬프|timestamp|시각|일시|날짜|date)/i;
 
-function emptySchema() { return { idKey: null, timeKey: null, categorical: [], numeric: [] }; }
+function emptySchema() { return { idKey: null, timeKey: null, categorical: [], numeric: [], isPerson: false }; }
+
+// 스키마를 보고 "명"(사람) / "건"(사물·일반) 중 알맞은 단위 라벨을 돌려준다.
+// idKey가 "닉네임/이름/성명" 같은 사람 이름 패턴으로 찾아졌을 때만 "명"을 쓰고,
+// 그 외(식별자가 없거나 상품명 등으로 대체된 경우)는 중립적인 "건"을 쓴다.
+function getUnitLabel(schema) { return (schema && schema.isPerson) ? '명' : '건'; }
 
 // 컬럼별로 범주형/수치형/식별자/시간을 자동 판별
 function detectSchema(headers, rawRows) {
@@ -17,7 +22,7 @@ function detectSchema(headers, rawRows) {
 
   headers.forEach(h => {
     if (!schema.timeKey && TIME_HEADER_RE.test(h)) { schema.timeKey = h; return; }
-    if (!schema.idKey && ID_HEADER_RE.test(h)) { schema.idKey = h; return; }
+    if (!schema.idKey && ID_HEADER_RE.test(h)) { schema.idKey = h; schema.isPerson = true; return; }
 
     const vals = rawRows.map(r => r[h]).filter(v => v !== undefined && v !== '');
     if (!vals.length) return; // 값이 전부 비어있으면 스킵
@@ -59,7 +64,7 @@ function typeRows(rawRows, schema) {
     Object.keys(r).forEach(h => {
       row[h] = schema.numeric.includes(h) ? (Number(r[h]) || 0) : r[h];
     });
-    row.__label = (schema.idKey && row[schema.idKey]) ? String(row[schema.idKey]) : `건수${i + 1}`;
+    row.__label = (schema.idKey && row[schema.idKey]) ? String(row[schema.idKey]) : `${getUnitLabel(schema)}${i + 1}`;
     return row;
   });
 }

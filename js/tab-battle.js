@@ -11,8 +11,12 @@ function hasBatchim(ch) {
 function josaEunNeun(word) { const last = word[word.length - 1]; return hasBatchim(last) ? '은' : '는'; }
 function josaIGa(word) { const last = word[word.length - 1]; return hasBatchim(last) ? '이' : '가'; }
 
-// 지표 컬럼명이 "~수"로 끝나면(반려동물수, 형제자매수 등) "많다", 그 외(점수·척도형)는 "높다"
-function verbStem(colName) { return colName.endsWith('수') ? '많' : '높'; }
+// 서술어 어간: 범주형 비율 비교 및 "~수"로 끝나는 수치형 컬럼(반려동물수 등)은 "많다",
+// 그 외 점수·척도형 수치는 "높다"
+function verbStem(def) {
+  if (def.type === 'category') return '많';
+  return def.field.endsWith('수') ? '많' : '높';
+}
 
 const CONFETTI_COLORS = ['var(--pink)', 'var(--teal)', 'var(--yellow)'];
 function spawnConfetti(layer) {
@@ -30,27 +34,60 @@ function spawnConfetti(layer) {
   setTimeout(() => { layer.innerHTML = ''; }, 1400);
 }
 
+// 주어(subject)가 속한 컬럼(key)을 제외한 나머지 컬럼들로 지표(metric) 후보 목록을 만든다.
+// - 수치형 컬럼: 평균 비교 ("급식만족도가 높다" 등)
+// - 범주형 컬럼(주어 컬럼 제외): 그 값의 비율(%) 비교 ("P가 많다", "저녁형이 많다" 등)
+function buildMetricDefs(schema, subjectKey) {
+  const list = [];
+  (schema.numeric || []).forEach(k => list.push({ type: 'numeric', field: k, label: k, groupLabel: '수치형' }));
+  (schema.categorical || []).forEach(c => {
+    if (c.key === subjectKey) return; // 주어와 같은 컬럼은 비교 대상에서 제외 (자기 자신과 비교 방지)
+    c.values.forEach(v => list.push({ type: 'category', field: c.key, target: v, label: v, groupLabel: c.key }));
+  });
+  return list;
+}
+
+// defs를 groupLabel 기준 <optgroup>으로 묶어 select에 채워 넣는다.
+function populateMetricSelect(selectEl, defs) {
+  const groups = [];
+  const idxByGroup = {};
+  defs.forEach((d, i) => {
+    if (!(d.groupLabel in idxByGroup)) { idxByGroup[d.groupLabel] = groups.length; groups.push({ label: d.groupLabel, items: [] }); }
+    groups[idxByGroup[d.groupLabel]].items.push(i);
+  });
+  selectEl.innerHTML = groups.map(g =>
+    `<optgroup label="${g.label}">${g.items.map(i => `<option value="${i}">${defs[i].label}</option>`).join('')}</optgroup>`
+  ).join('');
+}
+
+// 이전에 고르고 있던 지표와 최대한 비슷한(타입/필드/타깃이 같은) 지표를 새 목록에서 찾아 유지한다.
+function findEquivalentIndex(defs, prevDef) {
+  if (!prevDef) return 0;
+  const idx = defs.findIndex(d => d.type === prevDef.type && d.field === prevDef.field && d.target === prevDef.target);
+  return idx >= 0 ? idx : 0;
+}
+
 function initBattle(container) {
   const schema = state.schema;
   const hasCategorical = schema && schema.categorical && schema.categorical.length;
   const hasNumeric = schema && schema.numeric && schema.numeric.length;
+  const unit = (typeof getUnitLabel === 'function') ? getUnitLabel(schema) : '건';
 
-  if (!hasCategorical || !hasNumeric) {
-    container.innerHTML = `<div class="match-empty">비교할 수 있는 범주형(2~8개 값) 항목과 수치형 항목이 모두 있어야 가설 대결을 할 수 있어요.<br>데이터를 불러오면 자동으로 인식됩니다.</div>`;
+  if (!hasCategorical || (!hasNumeric && schema.categorical.length < 2)) {
+    container.innerHTML = `<div class="match-empty">비교할 범주형(2~8개 값) 항목과, 비교 기준이 될 수치형 또는 다른 범주형 항목이 함께 있어야 가설 대결을 할 수 있어요.<br>데이터를 불러오면 자동으로 인식됩니다.</div>`;
     return;
   }
 
-  // 범주형 컬럼별 옵션그룹 생성
+  // 범주형 컬럼별 옵션그룹 생성 (주어 드롭다운)
   const subjectGroups = schema.categorical.map(c =>
     `<optgroup label="${c.key}">${c.values.map(v => `<option value="${v}" data-key="${c.key}">${v}</option>`).join('')}</optgroup>`
   ).join('');
-  const metricOptions = schema.numeric.map(k => `<option value="${k}">${k}</option>`).join('');
 
   container.innerHTML = `
     <div class="sentence-builder">
       <select id="subject" class="select">${subjectGroups}</select>
       <span class="josa" id="josa1">은(는)</span>
-      <select id="metric" class="select">${metricOptions}</select>
+      <select id="metric" class="select"></select>
       <span class="josa" id="josa2">가(이)</span>
       <span class="static-text" id="verbText">높다!</span>
     </div>
@@ -99,22 +136,39 @@ function initBattle(container) {
   const confettiLayer = container.querySelector('#confettiLayer');
   const info = container.querySelector('#countInfo');
 
+  let metricDefs = [];
+
   function selectedSubject() {
     const opt = subject.options[subject.selectedIndex];
     return { value: opt.value, key: opt.dataset.key };
   }
-  function metricLabel() { return metric.options[metric.selectedIndex].textContent; }
+  function currentMetricDef() { return metricDefs[Number(metric.value)]; }
   function oppositeLabel(key, value) {
     const col = schema.categorical.find(c => c.key === key);
     if (col && col.values.length === 2) return col.values.find(v => v !== value) || '나머지';
     return '나머지';
   }
 
+  function refreshMetricOptions(keepPrevDef) {
+    const sv = selectedSubject();
+    metricDefs = buildMetricDefs(schema, sv.key);
+    if (!metricDefs.length) {
+      // 예외적으로 비교할 지표가 하나도 없는 경우(범주형 컬럼이 1개뿐이고 수치형도 없을 때)
+      container.innerHTML = `<div class="match-empty">'${sv.key}' 외에 비교할 수 있는 항목이 없어요.</div>`;
+      return false;
+    }
+    populateMetricSelect(metric, metricDefs);
+    metric.selectedIndex = findEquivalentIndex(metricDefs, keepPrevDef);
+    return true;
+  }
+
   function updateSentence() {
     const sv = selectedSubject();
-    const stem = verbStem(metric.value);
+    const def = currentMetricDef();
+    if (!def) return;
+    const stem = verbStem(def);
     josa1El.textContent = josaEunNeun(sv.value);
-    josa2El.textContent = josaIGa(metricLabel());
+    josa2El.textContent = josaIGa(def.label);
     verbText.textContent = `${stem}다!`;
     labelA.textContent = sv.value;
     labelB.textContent = oppositeLabel(sv.key, sv.value);
@@ -122,16 +176,26 @@ function initBattle(container) {
     resultSentence.classList.remove('show'); resultSentence.textContent = '';
     resultLeft.classList.remove('ok', 'no', 'tie');
   }
-  subject.addEventListener('change', updateSentence);
+
+  subject.addEventListener('change', () => {
+    const prevDef = currentMetricDef();
+    if (!refreshMetricOptions(prevDef)) return;
+    updateSentence();
+  });
   metric.addEventListener('change', updateSentence);
+
+  if (!refreshMetricOptions(null)) return;
   updateSentence();
 
   start.addEventListener('click', () => {
     const sv = selectedSubject();
-    const mf = metric.value;
-    const mLabel = metricLabel();
-    const stem = verbStem(mf);
+    const def = currentMetricDef();
+    if (!def) return;
+    const mLabel = def.label;
+    const stem = verbStem(def);
     const ov = oppositeLabel(sv.key, sv.value);
+    const isCategory = def.type === 'category';
+    const valueUnit = isCategory ? '%' : '';
 
     sound.drumroll();
     stamp.textContent = ''; stamp.classList.remove('show');
@@ -142,12 +206,17 @@ function initBattle(container) {
     setTimeout(() => {
       const group = state.data.filter(d => String(d[sv.key]) === sv.value);
       const rest = state.data.filter(d => String(d[sv.key]) !== sv.value);
-      const gAvg = avg(group, mf); const rAvg = avg(rest, mf);
+
+      function metricValue(arr) {
+        if (isCategory) return arr.length ? (arr.filter(d => String(d[def.field]) === def.target).length / arr.length * 100) : 0;
+        return avg(arr, def.field);
+      }
+      const gAvg = metricValue(group); const rAvg = metricValue(rest);
       const max = Math.max(gAvg, rAvg, 1);
 
-      barA.style.height = Math.max(6, (gAvg / max) * 100) + '%'; valueA.textContent = round1(gAvg);
-      barB.style.height = Math.max(6, (rAvg / max) * 100) + '%'; valueB.textContent = round1(rAvg);
-      info.textContent = `응답 ${state.data.length}건 기준 결과예요. 데이터가 늘어나면 또 바뀔 수도 있어요 😏`;
+      barA.style.height = Math.max(6, (gAvg / max) * 100) + '%'; valueA.textContent = round1(gAvg) + valueUnit;
+      barB.style.height = Math.max(6, (rAvg / max) * 100) + '%'; valueB.textContent = round1(rAvg) + valueUnit;
+      info.textContent = `응답 ${state.data.length}${unit} 기준 결과예요. 데이터가 늘어나면 또 바뀔 수도 있어요 😏`;
 
       setTimeout(() => {
         // 화면에 보이는 반올림 값 기준으로 판정 (반올림 시 같아 보이면 무승부 처리)

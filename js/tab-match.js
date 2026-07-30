@@ -19,9 +19,10 @@ function initMatch(container) {
 
   start.addEventListener('click', () => {
     const schema = state.schema;
+    const unit = (typeof getUnitLabel === 'function') ? getUnitLabel(schema) : '건';
     const numericKeys = (schema && schema.numeric) || [];
     if (numericKeys.length < 1) { out.innerHTML = `<div class="match-empty">닮은꼴을 계산할 수치형 항목이 없어요.</div>`; return; }
-    if (state.data.length < 2) { out.innerHTML = `<div class="match-empty">응답이 부족합니다. (2건 이상 필요)</div>`; return; }
+    if (state.data.length < 2) { out.innerHTML = `<div class="match-empty">응답이 부족합니다. (2${unit} 이상 필요)</div>`; return; }
 
     start.disabled = true;
     sound.shuffle(); // 매칭 계산 중인 느낌의 효과음

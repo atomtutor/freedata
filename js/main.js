@@ -14,8 +14,9 @@ function applyParsed(parsed, sourceLabel) {
     showPasteMsg('데이터를 인식하지 못했어요. 1행(헤더)부터 마지막 응답까지 다시 복사해서 붙여넣어 주세요.', true);
     return;
   }
+  const unit = getUnitLabel(parsed.schema);
   state.setData(parsed.rows, parsed.schema);
-  showPasteMsg(`${parsed.rows.length}건 데이터 적용됨 ✅${sourceLabel ? ' (' + sourceLabel + ')' : ''}`, false);
+  showPasteMsg(`${parsed.rows.length}${unit} 데이터 적용됨 ✅${sourceLabel ? ' (' + sourceLabel + ')' : ''}`, false);
 }
 
 // ── 데이터 입력: 샘플 데이터 (내장된 CSV 텍스트를 그대로 파싱, fetch 없음) ──
@@ -94,7 +95,8 @@ document.addEventListener('dataUpdated', (e) => {
 
   const el = document.getElementById('dataCount');
   if (el) {
-    el.textContent = `응답 ${rows.length}건 로드됨`;
+    const unit = getUnitLabel(schema);
+    el.textContent = `응답 ${rows.length}${unit} 로드됨`;
     el.classList.add('updated');
     setTimeout(() => el.classList.remove('updated'), 900);
   }

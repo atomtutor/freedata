@@ -10,6 +10,59 @@ function getOverviewFields(schema) {
 
 const PALETTE = ['var(--pink)', 'var(--teal)'];
 
+// 값이 다양한 수치형 컬럼을 몇 개(HIST_BUCKET_TARGET 근처)의 구간으로 묶을지 정한다.
+// 서로 다른 값의 개수가 이 기준(HIST_UNIQUE_THRESHOLD)을 넘으면, 값 하나하나를 막대로
+// 그리지 않고 "80~100"처럼 구간으로 묶어서 5~7개 정도의 막대로 보여준다.
+const HIST_UNIQUE_THRESHOLD = 10;
+const HIST_BUCKET_TARGET = 6;
+
+// 1, 2, 5 규칙의 "보기 좋은" 폭 후보들 중에서, 구간 개수가 목표(HIST_BUCKET_TARGET, 5~7개
+// 범위)에 가장 가까워지는 폭을 골라준다. (예: 범위 308이면 40이 아니라 50을 선택 → 7구간)
+function niceStep(range) {
+  if (!isFinite(range) || range <= 0) return 1;
+  const candidates = [];
+  for (let exp = -6; exp <= 6; exp++) { [1, 2, 4, 5, 8].forEach(m => candidates.push(m * Math.pow(10, exp))); }
+
+  let best = candidates[0], bestScore = Infinity;
+  candidates.forEach(step => {
+    const bucketCount = Math.ceil(range / step);
+    if (bucketCount < 1) return;
+    const inSweetSpot = bucketCount >= 5 && bucketCount <= 7;
+    const score = Math.abs(bucketCount - HIST_BUCKET_TARGET) - (inSweetSpot ? 0.5 : 0);
+    if (score < bestScore) { bestScore = score; best = step; }
+  });
+  return best;
+}
+
+function formatBucketNum(n, step) {
+  // 구간 폭이 정수면 정수로, 소수면 소수 첫째 자리까지 표시
+  return (step >= 1 && Number.isInteger(step)) ? String(Math.round(n)) : String(Math.round(n * 10) / 10);
+}
+
+// 값 목록을 5~7개 안팎의 구간(버킷)으로 묶는다.
+function buildHistogramBuckets(vals) {
+  const min = Math.min(...vals), max = Math.max(...vals);
+  if (min === max) return [{ label: formatBucketNum(min, 1), count: vals.length }];
+
+  const step = niceStep(max - min);
+  const start = Math.floor(min / step) * step;
+  const bucketCount = Math.max(1, Math.ceil((max - start) / step));
+
+  const buckets = Array.from({ length: bucketCount }, (_, i) => ({
+    from: start + i * step, to: start + (i + 1) * step, count: 0
+  }));
+  vals.forEach(v => {
+    let idx = Math.floor((v - start) / step);
+    if (idx >= buckets.length) idx = buckets.length - 1;
+    if (idx < 0) idx = 0;
+    buckets[idx].count++;
+  });
+  return buckets.map(b => ({
+    label: `${formatBucketNum(b.from, step)}~${formatBucketNum(b.to, step)}`,
+    count: b.count
+  }));
+}
+
 function renderBarRow(label, percentWidth, valueText, color) {
   return `<div class="bar-row">
     <div class="row-label">${label}</div>
@@ -23,6 +76,7 @@ function initOverview(container) {
 
   function render() {
     const schema = state.schema;
+    const unit = (typeof getUnitLabel === 'function') ? getUnitLabel(schema) : '건';
     const fields = schema ? getOverviewFields(schema) : [];
     if (!fields.length) {
       container.innerHTML = `<div class="match-empty">시각화할 수 있는 항목이 없어요. 데이터를 불러오면 자동으로 인식됩니다.</div>`;
@@ -53,21 +107,32 @@ function initOverview(container) {
       body.innerHTML = `
         <div class="overview-summary">${percent(counts[top] || 0, total)}%</div>
         <div class="overview-caption"> 이 자료에서는 <strong>${top}</strong>이(가) 가장 많아요!</div>
-        ${keys.map((k, i) => renderBarRow(k, percent(counts[k], total), `${counts[k]}건 (${percent(counts[k], total)}%)`, PALETTE[i % PALETTE.length])).join('')}
+        ${keys.map((k, i) => renderBarRow(k, percent(counts[k], total), `${counts[k]}${unit} (${percent(counts[k], total)}%)`, PALETTE[i % PALETTE.length])).join('')}
       `;
     } else {
       const vals = state.data.map(d => Number(d[field.key]) || 0);
       const avgVal = total ? (vals.reduce((s, v) => s + v, 0) / total) : 0;
-      const buckets = {};
-      vals.forEach(v => { buckets[v] = (buckets[v] || 0) + 1; });
-      const sortedKeys = Object.keys(buckets).map(Number).sort((a, b) => a - b);
-      const maxCount = Math.max(1, ...sortedKeys.map(k => buckets[k]));
       const color = PALETTE[cur % PALETTE.length];
+      const uniqueCount = new Set(vals).size;
+
+      let rows;
+      if (uniqueCount > HIST_UNIQUE_THRESHOLD) {
+        // 값이 너무 다양하면(예: 칼로리 51종) 5~7개 구간으로 묶어서 보여준다
+        const buckets = buildHistogramBuckets(vals);
+        const maxCount = Math.max(1, ...buckets.map(b => b.count));
+        rows = buckets.map(b => renderBarRow(b.label, Math.round(b.count / maxCount * 100), `${b.count}${unit}`, color)).join('');
+      } else {
+        const buckets = {};
+        vals.forEach(v => { buckets[v] = (buckets[v] || 0) + 1; });
+        const sortedKeys = Object.keys(buckets).map(Number).sort((a, b) => a - b);
+        const maxCount = Math.max(1, ...sortedKeys.map(k => buckets[k]));
+        rows = sortedKeys.map(k => renderBarRow(`${k}`, Math.round(buckets[k] / maxCount * 100), `${buckets[k]}${unit}`, color)).join('');
+      }
 
       body.innerHTML = `
         <div class="overview-summary">${avgVal.toFixed(1)}</div>
         <div class="overview-caption">평균 ${field.label}이에요</div>
-        ${sortedKeys.map(k => renderBarRow(`${k}`, Math.round(buckets[k] / maxCount * 100), `${buckets[k]}건`, color)).join('')}
+        ${rows}
       `;
     }
 
