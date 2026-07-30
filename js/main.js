@@ -2,10 +2,23 @@
 const app = document.getElementById('app');
 const panes = { battle: document.getElementById('battle'), overview: document.getElementById('overview'), match: document.getElementById('match') };
 
+// 탭별로 "마지막으로 그렸을 때의 state.version"을 기록해둔다.
+// 데이터가 바뀌어도 화면에 보이지 않는 탭까지 매번 다시 그릴 필요는 없으니,
+// 그 탭을 다시 볼 때(showTab) 버전이 다르면 그때 다시 그린다.
+const renderedVersion = { battle: -1, overview: -1, match: -1 };
+function renderTab(name) {
+  if (name === 'battle') initBattle(panes.battle);
+  if (name === 'overview') initOverview(panes.overview);
+  if (name === 'match') initMatch(panes.match);
+  renderedVersion[name] = state.version;
+}
+
 function showTab(name) {
   Object.values(panes).forEach(p => p.classList.add('hidden'));
   panes[name].classList.remove('hidden');
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  // 데이터가 바뀐 뒤 한 번도 안 그려진(=stale) 탭이면 지금 다시 그린다
+  if (renderedVersion[name] !== state.version) renderTab(name);
 }
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', e => showTab(e.target.dataset.tab)));
 
@@ -83,12 +96,13 @@ function renderSchemaPreview(schema) {
   `;
 }
 
-// init panels
+// init panels (초기 빈 상태로 한 번 그려두고, version은 기록해두지 않는다 → 첫 데이터 로드 시 모든 탭이 stale 처리됨)
 initBattle(panes.battle);
 initOverview(panes.overview);
 initMatch(panes.match);
 
-// 데이터 갱신 시 상단 카운트/스키마 미리보기 + 현재 탭 다시 그리기
+// 데이터 갱신 시 상단 카운트/스키마 미리보기 + 지금 보고 있는 탭만 바로 다시 그리기
+// (다른 탭들은 stale 상태로 남고, 사용자가 그 탭을 클릭하는 순간 showTab에서 다시 그려짐)
 document.addEventListener('dataUpdated', (e) => {
   const rows = (e && e.detail && e.detail.rows) || state.data || [];
   const schema = (e && e.detail && e.detail.schema) || state.schema;
@@ -103,9 +117,7 @@ document.addEventListener('dataUpdated', (e) => {
   renderSchemaPreview(schema);
 
   const active = document.querySelector('.tab.active').dataset.tab;
-  if (active === 'battle') initBattle(panes.battle);
-  if (active === 'overview') initOverview(panes.overview);
-  if (active === 'match') initMatch(panes.match);
+  renderTab(active);
 });
 
 // 시작하자마자 샘플 데이터 자동 로드
