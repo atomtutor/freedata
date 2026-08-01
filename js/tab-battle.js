@@ -8,8 +8,14 @@ function hasBatchim(ch) {
   if (code < 0xAC00 || code > 0xD7A3) return false; // 한글 음절이 아니면 받침 없다고 취급
   return (code - 0xAC00) % 28 !== 0;
 }
-function josaEunNeun(word) { const last = word[word.length - 1]; return hasBatchim(last) ? '은' : '는'; }
-function josaIGa(word) { const last = word[word.length - 1]; return hasBatchim(last) ? '이' : '가'; }
+// "단백질(g)", "칼로리 (kcal)"처럼 끝에 단위/설명이 괄호로 붙은 경우, 조사는 괄호
+// 앞의 실제 단어를 기준으로 판단해야 한다(괄호의 마지막 글자 ')'를 기준으로 하면 틀림).
+function coreWord(word) {
+  const stripped = String(word || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+  return stripped || word;
+}
+function josaEunNeun(word) { const w = coreWord(word); const last = w[w.length - 1]; return hasBatchim(last) ? '은' : '는'; }
+function josaIGa(word) { const w = coreWord(word); const last = w[w.length - 1]; return hasBatchim(last) ? '이' : '가'; }
 
 // 서술어 어간: 범주형 비율 비교 및 "~수"로 끝나는 수치형 컬럼(반려동물수 등)은 "많다",
 // 그 외 점수·척도형 수치는 "높다"
@@ -181,7 +187,7 @@ function initBattle(container) {
     const stem = verbStem(def);
     josa1El.textContent = josaEunNeun(sv.value);
     josa2El.textContent = josaIGa(def.label);
-    verbText.textContent = `${stem}다!`;
+    verbText.textContent = `가장 ${stem}다!`;
     labelA.textContent = sv.value;
     // 실제 경쟁 상대는 결과 공개 시점에 계산해서 보여준다 (미리 보여주면 스포일러가 됨)
     labelB.textContent = '?';
@@ -264,7 +270,7 @@ function initBattle(container) {
           resultLeft.classList.add('ok');
           resultSentence.textContent = compareEntry
             ? `${sv.value}${josaEunNeun(sv.value)} ${mLabel}${josaIGa(mLabel)} 진짜 1등이었어요! (2등: ${ov})`
-            : `${sv.value}${josaEunNeun(sv.value)} ${mLabel}${josaIGa(mLabel)} 정말 더 ${stem}았어요!`;
+            : `${sv.value}${josaEunNeun(sv.value)} ${mLabel}${josaIGa(mLabel)} 정말 가장 ${stem}았어요!`;
           sound.ding(); spawnConfetti(confettiLayer);
         } else {
           stamp.textContent = '❌';
