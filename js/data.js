@@ -7,6 +7,11 @@
 
 const ID_HEADER_RE = /(닉네임|이름|성명|name|nickname)/i;
 const TIME_HEADER_RE = /(타임스탬프|timestamp|시각|일시|날짜|date)/i;
+// 범주형으로 다루기 적당한 값 개수의 범위. 너무 적으면(1개) 비교 의미가 없고,
+// 너무 많으면(자유서술형 등) 드롭다운이 지저분해진다. 장르(10여 개)처럼 실제로
+// 유용한 범주 데이터를 포함할 수 있도록 넉넉하게 잡는다.
+const CATEGORICAL_MIN_VALUES = 2;
+const CATEGORICAL_MAX_VALUES = 20;
 
 // 바이트 데이터를 텍스트로 디코딩한다. 대부분의 CSV(특히 구글 시트 내보내기)는 UTF-8이지만,
 // 엑셀에서 "CSV(쉼표로 분리)"로 저장한 한글 파일은 종종 EUC-KR/CP949로 인코딩되어 있어
@@ -50,9 +55,9 @@ function detectSchema(headers, rawRows) {
       schema.numeric.push(h);
     } else {
       const uniq = Array.from(new Set(vals));
-      // 범주형으로 다루기 적당한 값 개수(2~8개)만 채택.
+      // 범주형으로 다루기 적당한 값 개수만 채택.
       // 그보다 많으면(자유서술형 등) 드롭다운이 지저분해지므로 분석 대상에서 제외.
-      if (uniq.length >= 2 && uniq.length <= 8 && uniq.length < total) {
+      if (uniq.length >= CATEGORICAL_MIN_VALUES && uniq.length <= CATEGORICAL_MAX_VALUES && uniq.length < total) {
         schema.categorical.push({ key: h, values: uniq });
       }
     }
@@ -85,19 +90,60 @@ function typeRows(rawRows, schema) {
   });
 }
 
+// ── CSV 토크나이저 (RFC 4180 방식 따옴표 처리) ──
+// 단순 split(',')는 "제목, 부제" 처럼 따옴표로 감싼 필드 안에 구분자가 들어있으면
+// 그 지점에서 컬럼이 밀려버리는 문제가 있다(실제 영화 데이터에서 확인됨).
+// 이 함수는 따옴표로 감싼 필드 안의 구분자/줄바꿈, 이스케이프된 큰따옴표("")까지
+// 올바르게 처리해서 각 행을 필드 배열로 반환한다.
+function tokenizeCSV(text, delim) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  const len = text.length;
+  let i = 0;
+
+  while (i < len) {
+    const ch = text[i];
+
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i += 2; continue; } // 이스케이프된 큰따옴표
+        inQuotes = false; i++; continue; // 닫는 따옴표
+      }
+      field += ch; i++; continue;
+    }
+
+    if (ch === '"') { inQuotes = true; i++; continue; } // 여는 따옴표
+    if (ch === delim) { row.push(field); field = ''; i++; continue; }
+    if (ch === '\r') { i++; continue; } // CR은 무시(다음 \n에서 줄바꿈 처리)
+    if (ch === '\n') { row.push(field); field = ''; rows.push(row); row = []; i++; continue; }
+    field += ch; i++;
+  }
+  // 파일 끝에 개행이 없는 마지막 줄 처리
+  if (field !== '' || row.length > 0) { row.push(field); rows.push(row); }
+
+  // 완전히 빈 행(빈 줄) 제거
+  return rows.filter(r => !(r.length === 1 && r[0].trim() === ''));
+}
+
 // CSV/TSV 텍스트 → { headers, rows, schema }
 function parseCSV(text) {
   if (!text || !String(text).trim()) return { headers: [], rows: [], schema: emptySchema() };
   text = text.replace(/\uFEFF/g, ''); // BOM 제거
-  const lines = String(text).trim().split(/\r?\n/).filter(Boolean);
-  if (lines.length < 2) return { headers: [], rows: [], schema: emptySchema() };
+  text = String(text).trim();
+  if (!text) return { headers: [], rows: [], schema: emptySchema() };
 
-  const headerLine = lines[0];
-  const commaCount = (headerLine.match(/,/g) || []).length;
-  const tabCount = (headerLine.match(/\t/g) || []).length;
+  // 구분자 판별은 첫 줄(헤더, 보통 따옴표 없는 단순한 값들)만 보고 판단한다.
+  const firstLine = text.split(/\r?\n/, 1)[0];
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const tabCount = (firstLine.match(/\t/g) || []).length;
   const delim = tabCount > commaCount ? '\t' : ',';
 
-  const rawHeaders = headerLine.split(delim).map(h => h.trim()).filter(h => h !== '');
+  const table = tokenizeCSV(text, delim);
+  if (table.length < 2) return { headers: [], rows: [], schema: emptySchema() };
+
+  const rawHeaders = table[0].map(h => h.trim()).filter(h => h !== '');
   // 헤더 중복 시 뒤에 번호 붙이기 (예: "메모","메모" → "메모","메모_2")
   const seen = {};
   const headers = rawHeaders.map(h => {
@@ -105,12 +151,13 @@ function parseCSV(text) {
     return seen[h] > 1 ? `${h}_${seen[h]}` : h;
   });
 
-  const rawRows = lines.slice(1).map(line => {
-    const cols = line.split(delim);
-    const r = {};
-    headers.forEach((h, i) => { r[h] = (cols[i] === undefined ? '' : cols[i].trim()); });
-    return r;
-  });
+  const rawRows = table.slice(1)
+    .filter(cols => !(cols.length === 1 && cols[0].trim() === '')) // 빈 행 제거
+    .map(cols => {
+      const r = {};
+      headers.forEach((h, i) => { r[h] = (cols[i] === undefined ? '' : cols[i].trim()); });
+      return r;
+    });
 
   const schema = detectSchema(headers, rawRows);
   const rows = typeRows(rawRows, schema);
