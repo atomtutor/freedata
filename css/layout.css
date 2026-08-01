@@ -56,6 +56,13 @@ header.top h1{
   transition:border-color .15s ease;
 }
 .sheet-input:focus{ outline:none; border-color:var(--teal); }
+.sheet-msg{
+  margin-top:10px;
+  font-size:var(--step-label);
+  font-weight:700;
+  color:var(--no);
+  min-height:1.2em;
+}
 .or-divider{
   text-align:center;
   color:var(--muted);

@@ -47,6 +47,7 @@ function applyParsed(parsed, sourceLabel) {
   const unit = getUnitLabel(parsed.schema);
   state.setData(parsed.rows, parsed.schema);
   showPasteMsg(`${parsed.rows.length}${unit} 데이터 적용됨 ✅${sourceLabel ? ' (' + sourceLabel + ')' : ''}`, false);
+  showSheetMsg(''); // 다른 방법으로 데이터가 정상 적용됐으면 이전 시트 링크 오류 메시지는 지운다
 }
 
 // ── 데이터 입력: 샘플 데이터 (내장된 CSV 텍스트를 그대로 파싱, fetch 없음) ──
@@ -55,11 +56,12 @@ document.getElementById('loadFake').addEventListener('click', () => {
 });
 
 // ── 데이터 입력: CSV 파일 업로드 (FileReader, file:// 에서도 정상 동작) ──
+// UTF-8/EUC-KR 자동 감지를 위해 텍스트가 아닌 바이트(ArrayBuffer)로 읽는다.
 document.getElementById('fileInput').addEventListener('change', e => {
   const f = e.target.files[0]; if (!f) return;
   const r = new FileReader();
-  r.onload = () => applyParsed(parseCSV(r.result), 'CSV 업로드');
-  r.readAsText(f);
+  r.onload = () => applyParsed(parseCSV(decodeBytes(r.result)), 'CSV 업로드');
+  r.readAsArrayBuffer(f);
 });
 
 // ── 데이터 입력: 구글 시트 링크 ──
@@ -82,32 +84,48 @@ function buildSheetCsvUrl(rawUrl) {
 const sheetUrlInput = document.getElementById('sheetUrlInput');
 const loadSheetBtn = document.getElementById('loadSheetUrl');
 
+function showSheetMsg(text) {
+  const el = document.getElementById('sheetMsg');
+  if (el) el.textContent = text || '';
+}
+
+// 링크 문제(형식 오류/비공개/네트워크 실패)를 안내하면서, 입력칸은 깨끗하게 비워
+// 바로 다시 입력할 수 있게 한다.
+function sheetError(message) {
+  showSheetMsg(message);
+  sheetUrlInput.value = '';
+  sheetUrlInput.focus();
+}
+
 document.getElementById('openSheetCsv').addEventListener('click', () => {
   const csvUrl = buildSheetCsvUrl(sheetUrlInput.value);
-  if (!csvUrl) { showPasteMsg('올바른 구글 시트 링크가 아니에요. "docs.google.com/spreadsheets/d/..." 형태의 링크를 넣어주세요.', true); return; }
+  if (!csvUrl) { sheetError('올바른 구글 시트 링크가 아니에요. "docs.google.com/spreadsheets/d/..." 형태의 링크를 넣어주세요.'); return; }
   window.open(csvUrl, '_blank');
 });
 
 loadSheetBtn.addEventListener('click', async () => {
   const csvUrl = buildSheetCsvUrl(sheetUrlInput.value);
   if (!csvUrl) {
-    showPasteMsg('올바른 구글 시트 링크가 아니에요. "docs.google.com/spreadsheets/d/..." 형태의 링크를 넣어주세요.', true);
+    sheetError('올바른 구글 시트 링크가 아니에요. "docs.google.com/spreadsheets/d/..." 형태의 링크를 넣어주세요.');
     return;
   }
   const originalText = loadSheetBtn.textContent;
   loadSheetBtn.disabled = true;
   loadSheetBtn.textContent = '불러오는 중...';
+  showSheetMsg('');
   showPasteMsg('구글 시트에서 불러오는 중이에요...', false);
 
   try {
     const res = await fetch(csvUrl);
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    const text = await res.text();
+    // UTF-8/EUC-KR 자동 감지를 위해 텍스트가 아닌 바이트(ArrayBuffer)로 받는다.
+    const buffer = await res.arrayBuffer();
+    const text = decodeBytes(buffer);
     // 비공개 시트면 CSV 대신 로그인 페이지(HTML)가 돌아온다 — 그 경우를 감지
     if (/^\s*<(!doctype|html)/i.test(text)) throw new Error('비공개 시트이거나 접근 권한이 없어요.');
     applyParsed(parseCSV(text), '구글 시트 링크');
   } catch (err) {
-    showPasteMsg('불러오지 못했어요. 시트 공유 설정을 "링크가 있는 모든 사용자(뷰어)"로 바꾼 뒤 다시 시도하거나, [새 탭에서 확인] 버튼으로 연 화면의 내용을 전체 복사(Ctrl+A → Ctrl+C)해서 아래 textarea에 붙여넣어 주세요.', true);
+    sheetError('불러오지 못했어요. 시트 공유 설정을 "링크가 있는 모든 사용자(뷰어)"로 바꾼 뒤 다시 시도하거나, [새 탭에서 확인] 버튼으로 연 화면의 내용을 전체 복사(Ctrl+A → Ctrl+C)해서 아래 textarea에 붙여넣어 주세요.');
   } finally {
     loadSheetBtn.disabled = false;
     loadSheetBtn.textContent = originalText;

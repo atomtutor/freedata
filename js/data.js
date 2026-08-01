@@ -8,6 +8,22 @@
 const ID_HEADER_RE = /(닉네임|이름|성명|name|nickname)/i;
 const TIME_HEADER_RE = /(타임스탬프|timestamp|시각|일시|날짜|date)/i;
 
+// 바이트 데이터를 텍스트로 디코딩한다. 대부분의 CSV(특히 구글 시트 내보내기)는 UTF-8이지만,
+// 엑셀에서 "CSV(쉼표로 분리)"로 저장한 한글 파일은 종종 EUC-KR/CP949로 인코딩되어 있어
+// 그대로 UTF-8로 읽으면 한글이 깨진다. UTF-8로 우선 시도해보고(fatal 모드로 엄격하게 검사),
+// 유효하지 않은 바이트 시퀀스가 있으면(=UTF-8이 아니면) EUC-KR로 다시 시도한다.
+function decodeBytes(buffer) {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  } catch (e) {
+    try {
+      return new TextDecoder('euc-kr').decode(buffer);
+    } catch (e2) {
+      return new TextDecoder('utf-8').decode(buffer); // 최후 수단: 깨지더라도 일단 표시
+    }
+  }
+}
+
 function emptySchema() { return { idKey: null, timeKey: null, categorical: [], numeric: [], isPerson: false }; }
 
 // 스키마를 보고 "명"(사람) / "건"(사물·일반) 중 알맞은 단위 라벨을 돌려준다.
