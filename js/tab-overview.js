@@ -71,6 +71,56 @@ function renderBarRow(label, percentWidth, valueText, color) {
   </div>`;
 }
 
+// 예측 유도 문구 (범주형/수치형에 따라 다르게)
+function guessPrompt(field) {
+  if (field.type === 'category') {
+    const opts = (field.order || []).slice(0, 4).join(' 아니면 ');
+    return opts ? `${opts}, 어느 쪽이 더 많을까요?` : `어떤 게 더 많을까요?`;
+  }
+  return `평균이 얼마쯤 될까요?`;
+}
+
+// field에 대한 실제 집계 결과(HTML)를 만든다 — 클릭해서 공개될 때 채워지는 내용
+function buildRevealHTML(field, unit) {
+  const total = state.data.length;
+  if (field.type === 'category') {
+    const counts = {};
+    state.data.forEach(d => { const v = d[field.key] || '미응답'; counts[v] = (counts[v] || 0) + 1; });
+    const keys = (field.order || []).filter(k => counts[k] !== undefined)
+      .concat(Object.keys(counts).filter(k => !(field.order || []).includes(k)));
+    const top = keys.reduce((a, b) => (counts[a] || 0) >= (counts[b] || 0) ? a : b, keys[0]);
+    return `
+      <div class="overview-summary reveal-pop">${percent(counts[top] || 0, total)}%</div>
+      <div class="overview-caption"> 이 자료에서는 <strong>${top}</strong>이(가) 가장 많아요!</div>
+      ${keys.map((k, i) => renderBarRow(k, percent(counts[k], total), `${counts[k]}${unit} (${percent(counts[k], total)}%)`, PALETTE[i % PALETTE.length])).join('')}
+    `;
+  } else {
+    const vals = state.data.map(d => Number(d[field.key]) || 0);
+    const avgVal = total ? (vals.reduce((s, v) => s + v, 0) / total) : 0;
+    const color = PALETTE[0];
+    const uniqueCount = new Set(vals).size;
+
+    let rows;
+    if (uniqueCount > HIST_UNIQUE_THRESHOLD) {
+      const buckets = buildHistogramBuckets(vals);
+      const maxCount = Math.max(1, ...buckets.map(b => b.count));
+      rows = buckets.map(b => renderBarRow(b.label, Math.round(b.count / maxCount * 100), `${b.count}${unit}`, color)).join('');
+    } else {
+      const buckets = {};
+      vals.forEach(v => { buckets[v] = (buckets[v] || 0) + 1; });
+      const sortedKeys = Object.keys(buckets).map(Number).sort((a, b) => a - b);
+      const maxCount = Math.max(1, ...sortedKeys.map(k => buckets[k]));
+      rows = sortedKeys.map(k => renderBarRow(`${k}`, Math.round(buckets[k] / maxCount * 100), `${buckets[k]}${unit}`, color)).join('');
+    }
+
+    return `
+      <div class="overview-summary reveal-pop">${avgVal.toFixed(1)}</div>
+      <div class="overview-caption">평균 ${field.label}이에요</div>
+      ${rows}
+    `;
+  }
+}
+
 function initOverview(container) {
   let cur = 0;
 
@@ -85,7 +135,6 @@ function initOverview(container) {
     if (cur >= fields.length) cur = 0;
 
     const field = fields[cur];
-    const total = state.data.length;
     container.innerHTML = `
       <div class="overview-card">
         <h2>${field.label}</h2>
@@ -98,43 +147,25 @@ function initOverview(container) {
       </div>`;
     const body = container.querySelector('#overviewBody');
 
-    if (field.type === 'category') {
-      const counts = {};
-      state.data.forEach(d => { const v = d[field.key] || '미응답'; counts[v] = (counts[v] || 0) + 1; });
-      const keys = (field.order || []).filter(k => counts[k] !== undefined)
-        .concat(Object.keys(counts).filter(k => !(field.order || []).includes(k)));
-      const top = keys.reduce((a, b) => (counts[a] || 0) >= (counts[b] || 0) ? a : b, keys[0]);
-      body.innerHTML = `
-        <div class="overview-summary">${percent(counts[top] || 0, total)}%</div>
-        <div class="overview-caption"> 이 자료에서는 <strong>${top}</strong>이(가) 가장 많아요!</div>
-        ${keys.map((k, i) => renderBarRow(k, percent(counts[k], total), `${counts[k]}${unit} (${percent(counts[k], total)}%)`, PALETTE[i % PALETTE.length])).join('')}
-      `;
-    } else {
-      const vals = state.data.map(d => Number(d[field.key]) || 0);
-      const avgVal = total ? (vals.reduce((s, v) => s + v, 0) / total) : 0;
-      const color = PALETTE[cur % PALETTE.length];
-      const uniqueCount = new Set(vals).size;
-
-      let rows;
-      if (uniqueCount > HIST_UNIQUE_THRESHOLD) {
-        // 값이 너무 다양하면(예: 칼로리 51종) 5~7개 구간으로 묶어서 보여준다
-        const buckets = buildHistogramBuckets(vals);
-        const maxCount = Math.max(1, ...buckets.map(b => b.count));
-        rows = buckets.map(b => renderBarRow(b.label, Math.round(b.count / maxCount * 100), `${b.count}${unit}`, color)).join('');
-      } else {
-        const buckets = {};
-        vals.forEach(v => { buckets[v] = (buckets[v] || 0) + 1; });
-        const sortedKeys = Object.keys(buckets).map(Number).sort((a, b) => a - b);
-        const maxCount = Math.max(1, ...sortedKeys.map(k => buckets[k]));
-        rows = sortedKeys.map(k => renderBarRow(`${k}`, Math.round(buckets[k] / maxCount * 100), `${buckets[k]}${unit}`, color)).join('');
-      }
-
-      body.innerHTML = `
-        <div class="overview-summary">${avgVal.toFixed(1)}</div>
-        <div class="overview-caption">평균 ${field.label}이에요</div>
-        ${rows}
-      `;
-    }
+    // ── 카드를 열 때마다 항상 "잠긴 상태(예측 먼저)"로 시작한다 ──
+    body.innerHTML = `
+      <div class="reveal-card" id="revealCard">
+        <div class="reveal-icon">🤔</div>
+        <div class="reveal-prompt-text">${guessPrompt(field)}</div>
+        <div class="reveal-cta">눌러서 결과 확인! 👀</div>
+      </div>
+    `;
+    const revealCard = body.querySelector('#revealCard');
+    revealCard.addEventListener('click', () => {
+      if (!revealCard.classList.contains('reveal-card')) return; // 중복 클릭 방지
+      revealCard.classList.remove('reveal-card');
+      revealCard.classList.add('revealing');
+      revealCard.querySelector('.reveal-cta').textContent = '두구두구... 🥁';
+      sound.drumroll();
+      setTimeout(() => {
+        body.innerHTML = buildRevealHTML(field, unit);
+      }, 900);
+    });
 
     container.querySelector('#prev').addEventListener('click', () => { cur = (cur - 1 + fields.length) % fields.length; render() });
     container.querySelector('#next').addEventListener('click', () => { cur = (cur + 1) % fields.length; render() });
