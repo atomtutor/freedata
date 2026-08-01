@@ -22,6 +22,23 @@ function showTab(name) {
 }
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', e => showTab(e.target.dataset.tab)));
 
+// ── 화면 전환: 입력 화면 ↔ 분석 화면 ──
+const screenInput = document.getElementById('screenInput');
+const screenAnalysis = document.getElementById('screenAnalysis');
+
+document.getElementById('startAnalysis').addEventListener('click', () => {
+  screenInput.classList.add('hidden');
+  screenAnalysis.classList.remove('hidden');
+  showTab('overview'); // 분석 화면에 들어갈 때는 항상 "데이터 한눈에"부터 보여준다
+  window.scrollTo(0, 0);
+});
+
+document.getElementById('backToInput').addEventListener('click', () => {
+  screenAnalysis.classList.add('hidden');
+  screenInput.classList.remove('hidden');
+  window.scrollTo(0, 0);
+});
+
 function applyParsed(parsed, sourceLabel) {
   if (!parsed || !parsed.rows || !parsed.rows.length) {
     showPasteMsg('데이터를 인식하지 못했어요. 1행(헤더)부터 마지막 응답까지 다시 복사해서 붙여넣어 주세요.', true);
@@ -160,11 +177,18 @@ document.addEventListener('dataUpdated', (e) => {
   const schema = (e && e.detail && e.detail.schema) || state.schema;
 
   const el = document.getElementById('dataCount');
+  const elMini = document.getElementById('dataCountMini');
+  const unit = getUnitLabel(schema);
+  const countText = `응답 ${rows.length}${unit} 로드됨`;
   if (el) {
-    const unit = getUnitLabel(schema);
-    el.textContent = `응답 ${rows.length}${unit} 로드됨`;
+    el.textContent = countText;
     el.classList.add('updated');
     setTimeout(() => el.classList.remove('updated'), 900);
+  }
+  if (elMini) {
+    elMini.textContent = countText;
+    elMini.classList.add('updated');
+    setTimeout(() => elMini.classList.remove('updated'), 900);
   }
   renderSchemaPreview(schema);
 

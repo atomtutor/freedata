@@ -1,22 +1,69 @@
+/* ═══════════ 화면 전환 (입력 ↔ 분석) ═══════════ */
+.screen{ width:100%; }
+
+.start-row{
+  text-align:center;
+  margin:clamp(20px,2.6vw,32px) 0 clamp(8px,1vw,12px);
+}
+.btn-large{
+  padding:20px 48px;
+  font-size:var(--step-h2);
+  font-weight:900;
+}
+
+.analysis-topbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:12px;
+  margin-bottom:clamp(16px,2vw,24px);
+}
+.btn.small{ padding:9px 18px; font-size:var(--step-label); }
+
 /* ═══════════ 헤더 / 데이터 입력 ═══════════ */
 header.top{
   display:flex;
-  gap:clamp(20px,3vw,40px);
-  align-items:flex-start;
+  flex-direction:column;
+  gap:clamp(14px,1.8vw,20px);
+  align-items:stretch;
   background:var(--surface);
   padding:clamp(20px,2.4vw,32px);
   border-radius:var(--radius-lg);
   box-shadow:var(--shadow-sm);
-  margin-bottom:clamp(16px,2vw,28px);
-  flex-wrap:wrap;
 }
 header.top h1{
   font-size:var(--step-h1);
   font-weight:900;
   letter-spacing:-0.02em;
-  white-space:nowrap;
 }
-.inputs{ flex:1; min-width:320px; }
+.inputs{ width:100%; }
+
+.sheet-row{
+  display:flex;
+  gap:12px;
+  align-items:center;
+  flex-wrap:wrap;
+}
+.sheet-input{
+  flex:1 1 480px;
+  min-width:280px;
+  padding:16px 20px;
+  font-size:var(--step-body);
+  border-radius:999px;
+  border:2px solid #EEE6F5;
+  background:var(--surface-2);
+  transition:border-color .15s ease;
+}
+.sheet-input:focus{ outline:none; border-color:var(--teal); }
+.or-divider{
+  text-align:center;
+  color:var(--muted);
+  font-size:var(--step-label);
+  font-weight:700;
+  margin:12px 0;
+}
+
 #pasteArea{
   width:100%;
   min-height:110px;

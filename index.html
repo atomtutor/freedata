@@ -12,38 +12,54 @@
   <link rel="stylesheet" href="css/animations.css">
 </head>
 <body>
-  <header class="top">
-    <h1>우리만의 데이터쇼</h1>
-    <div class="inputs">
-      <div class="sheet-row">
-        <input id="sheetUrlInput" type="url" class="sheet-input" placeholder="구글 시트 공유 링크를 붙여넣으세요 (예: https://docs.google.com/spreadsheets/d/...)">
-        <button id="loadSheetUrl" class="btn teal">🔗 링크로 불러오기</button>
-        <button id="openSheetCsv" class="btn ghost">새 탭에서 확인</button>
+
+  <!-- ═══ 화면 1: 데이터 입력 ═══ -->
+  <div id="screenInput" class="screen">
+    <header class="top">
+      <h1>우리만의 데이터쇼</h1>
+      <div class="inputs">
+        <div class="sheet-row">
+          <input id="sheetUrlInput" type="url" class="sheet-input" placeholder="구글 시트 공유 링크를 붙여넣으세요 (예: https://docs.google.com/spreadsheets/d/...)">
+          <button id="loadSheetUrl" class="btn teal">🔗 링크로 불러오기</button>
+          <button id="openSheetCsv" class="btn ghost">새 탭에서 확인</button>
+        </div>
+        <div class="or-divider">또는 직접 복사해서 붙여넣기</div>
+        <textarea id="pasteArea" placeholder="구글 시트에서 복사한 데이터를 붙여넣으세요 (헤더 포함)"></textarea>
+        <div class="file-row">
+          <button id="applyPaste" class="btn">📋 붙여넣은 내용 적용하기</button>
+          <label class="btn secondary">CSV 파일 불러오기 <input id="fileInput" type="file" accept="text/csv" hidden></label>
+          <button id="loadFake" class="btn ghost">샘플 데이터 로드</button>
+          <div id="dataCount" class="data-count"></div>
+        </div>
+        <div id="pasteMsg" class="paste-msg"></div>
+        <div id="schemaPreview" class="schema-preview"></div>
       </div>
-      <div class="or-divider">또는 직접 복사해서 붙여넣기</div>
-      <textarea id="pasteArea" placeholder="구글 시트에서 복사한 데이터를 붙여넣으세요 (헤더 포함)"></textarea>
-      <div class="file-row">
-        <button id="applyPaste" class="btn">📋 붙여넣은 내용 적용하기</button>
-        <label class="btn secondary">CSV 파일 불러오기 <input id="fileInput" type="file" accept="text/csv" hidden></label>
-        <button id="loadFake" class="btn ghost">샘플 데이터 로드</button>
-        <div id="dataCount" class="data-count"></div>
-      </div>
-      <div id="pasteMsg" class="paste-msg"></div>
-      <div id="schemaPreview" class="schema-preview"></div>
+    </header>
+
+    <div class="start-row">
+      <button id="startAnalysis" class="btn btn-large">📊 분석 시작하기</button>
     </div>
-  </header>
+  </div>
 
-  <nav class="tabs">
-    <button data-tab="overview" class="tab">데이터 한눈에</button>
-    <button data-tab="battle" class="tab active">가설 대결</button>
-    <button data-tab="match" class="tab">닮은꼴 찾기</button>
-  </nav>
+  <!-- ═══ 화면 2: 분석 결과 ═══ -->
+  <div id="screenAnalysis" class="screen hidden">
+    <div class="analysis-topbar">
+      <button id="backToInput" class="btn ghost small">◀ 데이터 다시 불러오기</button>
+      <div id="dataCountMini" class="data-count"></div>
+    </div>
 
-  <main id="app">
-    <section id="overview" class="tab-pane hidden"></section>
-    <section id="battle" class="tab-pane"></section>
-    <section id="match" class="tab-pane hidden"></section>
-  </main>
+    <nav class="tabs">
+      <button data-tab="overview" class="tab active">데이터 한눈에</button>
+      <button data-tab="battle" class="tab">가설 대결</button>
+      <button data-tab="match" class="tab">닮은꼴 찾기</button>
+    </nav>
+
+    <main id="app">
+      <section id="overview" class="tab-pane"></section>
+      <section id="battle" class="tab-pane hidden"></section>
+      <section id="match" class="tab-pane hidden"></section>
+    </main>
+  </div>
 
   <script src="js/state.js"></script>
   <script src="js/sound.js"></script>
