@@ -52,6 +52,7 @@ function applyParsed(parsed, sourceLabel) {
 
 // ── 데이터 입력: 샘플 데이터 (내장된 CSV 텍스트를 그대로 파싱, fetch 없음) ──
 document.getElementById('loadFake').addEventListener('click', () => {
+  pasteArea.value = SAMPLE_CSV;
   applyParsed(parseCSV(SAMPLE_CSV), '샘플 데이터');
 });
 
@@ -60,7 +61,11 @@ document.getElementById('loadFake').addEventListener('click', () => {
 document.getElementById('fileInput').addEventListener('change', e => {
   const f = e.target.files[0]; if (!f) return;
   const r = new FileReader();
-  r.onload = () => applyParsed(parseCSV(decodeBytes(r.result)), 'CSV 업로드');
+  r.onload = () => {
+    const text = decodeBytes(r.result);
+    pasteArea.value = text;
+    applyParsed(parseCSV(text), 'CSV 업로드');
+  };
   r.readAsArrayBuffer(f);
 });
 
@@ -123,6 +128,7 @@ loadSheetBtn.addEventListener('click', async () => {
     const text = decodeBytes(buffer);
     // 비공개 시트면 CSV 대신 로그인 페이지(HTML)가 돌아온다 — 그 경우를 감지
     if (/^\s*<(!doctype|html)/i.test(text)) throw new Error('비공개 시트이거나 접근 권한이 없어요.');
+    pasteArea.value = text;
     applyParsed(parseCSV(text), '구글 시트 링크');
   } catch (err) {
     sheetError('불러오지 못했어요. 시트 공유 설정을 "링크가 있는 모든 사용자(뷰어)"로 바꾼 뒤 다시 시도하거나, [새 탭에서 확인] 버튼으로 연 화면의 내용을 전체 복사(Ctrl+A → Ctrl+C)해서 아래 textarea에 붙여넣어 주세요.');
@@ -214,5 +220,6 @@ document.addEventListener('dataUpdated', (e) => {
   renderTab(active);
 });
 
-// 시작하자마자 샘플 데이터 자동 로드
+// 시작하자마자 샘플 데이터 자동 로드 (단, 사용자가 직접 요청한 게 아니므로
+// textarea는 건드리지 않고 빈 상태로 둔다 — "기본 상태"를 유지)
 applyParsed(parseCSV(SAMPLE_CSV), '샘플 데이터');

@@ -18,10 +18,15 @@ const HIST_BUCKET_TARGET = 6;
 
 // 1, 2, 5 규칙의 "보기 좋은" 폭 후보들 중에서, 구간 개수가 목표(HIST_BUCKET_TARGET, 5~7개
 // 범위)에 가장 가까워지는 폭을 골라준다. (예: 범위 308이면 40이 아니라 50을 선택 → 7구간)
+// 후보 폭의 자릿수(exp)는 range의 크기(로그 스케일)에 맞춰 동적으로 정한다 — 예를 들어
+// 매출액처럼 range가 1,000억 단위든, 칼로리처럼 range가 수백 단위든 항상 적절한 구간 개수가 나오게 한다.
 function niceStep(range) {
   if (!isFinite(range) || range <= 0) return 1;
+  const magnitude = Math.floor(Math.log10(range));
   const candidates = [];
-  for (let exp = -6; exp <= 6; exp++) { [1, 2, 4, 5, 8].forEach(m => candidates.push(m * Math.pow(10, exp))); }
+  for (let exp = magnitude - 3; exp <= magnitude + 1; exp++) {
+    [1, 2, 4, 5, 8].forEach(m => candidates.push(m * Math.pow(10, exp)));
+  }
 
   let best = candidates[0], bestScore = Infinity;
   candidates.forEach(step => {
@@ -34,9 +39,16 @@ function niceStep(range) {
   return best;
 }
 
+// 큰 수(매출액 등)는 천 단위 구분 기호를 붙여 가독성을 높인다.
+function formatNumber(n) {
+  const rounded = Math.round(n * 10) / 10;
+  return rounded.toLocaleString('ko-KR', { maximumFractionDigits: 1 });
+}
+
 function formatBucketNum(n, step) {
-  // 구간 폭이 정수면 정수로, 소수면 소수 첫째 자리까지 표시
-  return (step >= 1 && Number.isInteger(step)) ? String(Math.round(n)) : String(Math.round(n * 10) / 10);
+  // 구간 폭이 정수면 정수로, 소수면 소수 첫째 자리까지 표시. 큰 수는 천 단위 구분 기호 포함.
+  const rounded = (step >= 1 && Number.isInteger(step)) ? Math.round(n) : Math.round(n * 10) / 10;
+  return formatNumber(rounded);
 }
 
 // 값 목록을 5~7개 안팎의 구간(버킷)으로 묶는다.
@@ -110,11 +122,14 @@ function buildRevealHTML(field, unit) {
       vals.forEach(v => { buckets[v] = (buckets[v] || 0) + 1; });
       const sortedKeys = Object.keys(buckets).map(Number).sort((a, b) => a - b);
       const maxCount = Math.max(1, ...sortedKeys.map(k => buckets[k]));
-      rows = sortedKeys.map(k => renderBarRow(`${k}`, Math.round(buckets[k] / maxCount * 100), `${buckets[k]}${unit}`, color)).join('');
+      rows = sortedKeys.map(k => renderBarRow(formatNumber(k), Math.round(buckets[k] / maxCount * 100), `${buckets[k]}${unit}`, color)).join('');
     }
 
+    const avgText = formatNumber(avgVal);
+    const summaryClass = avgText.length > 9 ? 'overview-summary reveal-pop long' : 'overview-summary reveal-pop';
+
     return `
-      <div class="overview-summary reveal-pop">${avgVal.toFixed(1)}</div>
+      <div class="${summaryClass}">${avgText}</div>
       <div class="overview-caption">평균 ${field.label}이에요</div>
       ${rows}
     `;
