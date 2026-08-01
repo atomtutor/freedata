@@ -45,6 +45,58 @@ document.getElementById('fileInput').addEventListener('change', e => {
   r.readAsText(f);
 });
 
+// ── 데이터 입력: 구글 시트 링크 ──
+// 공유 링크(.../d/{id}/edit...)를 CSV 내보내기 링크(.../export?format=csv)로 자동 변환해서 불러온다.
+// 이미 "게시된 웹(pub)" 링크나 output=csv 링크를 넣으면 그대로 사용한다.
+// (이 앱은 GitHub Pages 같은 https 서버에서 서빙되는 걸 기준으로 하며, file:// 더블클릭 실행에서는
+//  브라우저 정책상 이 fetch가 막힐 수 있다 — 그런 경우를 대비해 "새 탭에서 확인" 폴백을 함께 제공한다.)
+function buildSheetCsvUrl(rawUrl) {
+  const url = String(rawUrl || '').trim();
+  if (!url) return null;
+  if (/output=csv/i.test(url) || /\/pub\?/i.test(url)) return url;
+  const idMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (!idMatch) return null;
+  const id = idMatch[1];
+  const gidMatch = url.match(/gid=([0-9]+)/);
+  const gid = gidMatch ? gidMatch[1] : '0';
+  return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
+}
+
+const sheetUrlInput = document.getElementById('sheetUrlInput');
+const loadSheetBtn = document.getElementById('loadSheetUrl');
+
+document.getElementById('openSheetCsv').addEventListener('click', () => {
+  const csvUrl = buildSheetCsvUrl(sheetUrlInput.value);
+  if (!csvUrl) { showPasteMsg('올바른 구글 시트 링크가 아니에요. "docs.google.com/spreadsheets/d/..." 형태의 링크를 넣어주세요.', true); return; }
+  window.open(csvUrl, '_blank');
+});
+
+loadSheetBtn.addEventListener('click', async () => {
+  const csvUrl = buildSheetCsvUrl(sheetUrlInput.value);
+  if (!csvUrl) {
+    showPasteMsg('올바른 구글 시트 링크가 아니에요. "docs.google.com/spreadsheets/d/..." 형태의 링크를 넣어주세요.', true);
+    return;
+  }
+  const originalText = loadSheetBtn.textContent;
+  loadSheetBtn.disabled = true;
+  loadSheetBtn.textContent = '불러오는 중...';
+  showPasteMsg('구글 시트에서 불러오는 중이에요...', false);
+
+  try {
+    const res = await fetch(csvUrl);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    // 비공개 시트면 CSV 대신 로그인 페이지(HTML)가 돌아온다 — 그 경우를 감지
+    if (/^\s*<(!doctype|html)/i.test(text)) throw new Error('비공개 시트이거나 접근 권한이 없어요.');
+    applyParsed(parseCSV(text), '구글 시트 링크');
+  } catch (err) {
+    showPasteMsg('불러오지 못했어요. 시트 공유 설정을 "링크가 있는 모든 사용자(뷰어)"로 바꾼 뒤 다시 시도하거나, [새 탭에서 확인] 버튼으로 연 화면의 내용을 전체 복사(Ctrl+A → Ctrl+C)해서 아래 textarea에 붙여넣어 주세요.', true);
+  } finally {
+    loadSheetBtn.disabled = false;
+    loadSheetBtn.textContent = originalText;
+  }
+});
+
 // ── 데이터 입력: 붙여넣기 ──
 // "paste" 이벤트만 믿지 않고, 명시적으로 누르는 [적용하기] 버튼을 기본 경로로 둔다.
 const pasteArea = document.getElementById('pasteArea');
