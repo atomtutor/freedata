@@ -29,6 +29,19 @@ function decodeBytes(buffer) {
   }
 }
 
+// "163,217,262,840"처럼 천단위 구분 쉼표가 포함된 값을 숫자로 변환한다.
+// 그냥 Number()로는 쉼표 때문에 NaN이 나와 수치형 인식/집계에 실패하므로,
+// 숫자 판별·변환 전에 항상 이 함수를 거친다. (한국 표기 관례상 쉼표는 항상
+// 천단위 구분자이고 소수점은 마침표이므로, 쉼표만 제거해도 안전하다.)
+function toNumber(v) {
+  if (typeof v === 'number') return v;
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return NaN;
+  const cleaned = s.replace(/,/g, '');
+  if (cleaned === '' || isNaN(Number(cleaned))) return NaN;
+  return Number(cleaned);
+}
+
 function emptySchema() { return { idKey: null, timeKey: null, categorical: [], numeric: [], isPerson: false }; }
 
 // 스키마를 보고 "명"(사람) / "건"(사물·일반) 중 알맞은 단위 라벨을 돌려준다.
@@ -48,7 +61,7 @@ function detectSchema(headers, rawRows) {
     const vals = rawRows.map(r => r[h]).filter(v => v !== undefined && v !== '');
     if (!vals.length) return; // 값이 전부 비어있으면 스킵
 
-    const numericVals = vals.filter(v => v !== '' && !isNaN(Number(v)));
+    const numericVals = vals.filter(v => v !== '' && !isNaN(toNumber(v)));
     const isNumeric = numericVals.length / vals.length >= 0.9;
 
     if (isNumeric) {
@@ -83,7 +96,7 @@ function typeRows(rawRows, schema) {
   return rawRows.map((r, i) => {
     const row = {};
     Object.keys(r).forEach(h => {
-      row[h] = schema.numeric.includes(h) ? (Number(r[h]) || 0) : r[h];
+      row[h] = schema.numeric.includes(h) ? (toNumber(r[h]) || 0) : r[h];
     });
     row.__label = (schema.idKey && row[schema.idKey]) ? String(row[schema.idKey]) : `${getUnitLabel(schema)}${i + 1}`;
     return row;

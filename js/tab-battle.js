@@ -143,10 +143,22 @@ function initBattle(container) {
     return { value: opt.value, key: opt.dataset.key };
   }
   function currentMetricDef() { return metricDefs[Number(metric.value)]; }
-  function oppositeLabel(key, value) {
-    const col = schema.categorical.find(c => c.key === key);
-    if (col && col.values.length === 2) return col.values.find(v => v !== value) || '나머지';
-    return '나머지';
+
+  // 지표(def)를 기준으로 특정 범주값(colKey=value)의 대표값을 계산한다.
+  // - 수치형 지표: 그 범주에 속한 응답들의 평균
+  // - 범주형 지표(다른 컬럼의 특정 값 비율): 그 범주에 속한 응답 중 target 값의 비율(%)
+  function groupValue(colKey, value, def) {
+    const arr = state.data.filter(d => String(d[colKey]) === value);
+    if (def.type === 'category') return arr.length ? (arr.filter(d => String(d[def.field]) === def.target).length / arr.length * 100) : 0;
+    return avg(arr, def.field);
+  }
+
+  // 주어 컬럼의 모든 범주값을 해당 지표 기준으로 순위 매긴다 (내림차순).
+  function rankSubjectValues(sv, def) {
+    const col = schema.categorical.find(c => c.key === sv.key);
+    return (col ? col.values : [sv.value])
+      .map(v => ({ value: v, val: groupValue(sv.key, v, def) }))
+      .sort((a, b) => b.val - a.val);
   }
 
   function refreshMetricOptions(keepPrevDef) {
@@ -171,7 +183,10 @@ function initBattle(container) {
     josa2El.textContent = josaIGa(def.label);
     verbText.textContent = `${stem}다!`;
     labelA.textContent = sv.value;
-    labelB.textContent = oppositeLabel(sv.key, sv.value);
+    // 실제 경쟁 상대는 결과 공개 시점에 계산해서 보여준다 (미리 보여주면 스포일러가 됨)
+    labelB.textContent = '?';
+    valueA.textContent = ''; valueB.textContent = '';
+    barA.style.height = '6%'; barB.style.height = '6%';
     stamp.classList.remove('show'); stamp.textContent = '';
     resultSentence.classList.remove('show'); resultSentence.textContent = '';
     resultLeft.classList.remove('ok', 'no', 'tie');
@@ -193,7 +208,6 @@ function initBattle(container) {
     if (!def) return;
     const mLabel = def.label;
     const stem = verbStem(def);
-    const ov = oppositeLabel(sv.key, sv.value);
     const isCategory = def.type === 'category';
     const valueUnit = isCategory ? '%' : '';
 
@@ -204,41 +218,58 @@ function initBattle(container) {
     confettiLayer.innerHTML = '';
 
     setTimeout(() => {
-      const group = state.data.filter(d => String(d[sv.key]) === sv.value);
-      const rest = state.data.filter(d => String(d[sv.key]) !== sv.value);
+      // 주어 컬럼에 범주가 여러 개 있을 수 있으므로, "나머지 전체 평균"이 아니라
+      // "이 지표 기준으로 모든 범주 중 실제 1등이 누구인지"를 계산한다.
+      // (범주가 3개 이상일 때 여러 범주가 동시에 "나머지보다 높다"며 O가 나오는
+      //  모순을 막기 위함 — 오직 진짜 1등만 O를 받는다)
+      const ranked = rankSubjectValues(sv, def);
+      const gEntry = ranked.find(r => r.value === sv.value);
+      const gAvg = gEntry.val;
+      const topRounded = round1(ranked[0].val);
+      const gRounded = round1(gAvg);
+      const tiedForFirst = ranked.filter(r => round1(r.val) === topRounded);
+      const selectedIsTop = gRounded === topRounded;
 
-      function metricValue(arr) {
-        if (isCategory) return arr.length ? (arr.filter(d => String(d[def.field]) === def.target).length / arr.length * 100) : 0;
-        return avg(arr, def.field);
+      let result;
+      if (selectedIsTop && tiedForFirst.length > 1) result = 'TIE';
+      else if (selectedIsTop) result = 'O';
+      else result = 'X';
+
+      // 오른쪽 막대에 보여줄 비교 대상: O면 2등(러너업), X면 실제 1등, TIE면 공동 1위인 다른 범주
+      let compareEntry;
+      if (result === 'O') {
+        compareEntry = ranked.find(r => r.value !== sv.value && round1(r.val) !== topRounded) || ranked.find(r => r.value !== sv.value);
+      } else if (result === 'TIE') {
+        compareEntry = tiedForFirst.find(r => r.value !== sv.value);
+      } else {
+        compareEntry = ranked[0];
       }
-      const gAvg = metricValue(group); const rAvg = metricValue(rest);
-      const max = Math.max(gAvg, rAvg, 1);
+      const ov = compareEntry ? compareEntry.value : '나머지';
+      const rAvg = compareEntry ? compareEntry.val : 0;
 
+      const max = Math.max(gAvg, rAvg, 1);
       barA.style.height = Math.max(6, (gAvg / max) * 100) + '%'; valueA.textContent = round1(gAvg) + valueUnit;
       barB.style.height = Math.max(6, (rAvg / max) * 100) + '%'; valueB.textContent = round1(rAvg) + valueUnit;
-      info.textContent = `응답 ${state.data.length}${unit} 기준 결과예요. 데이터가 늘어나면 또 바뀔 수도 있어요 😏`;
+      labelA.textContent = sv.value; labelB.textContent = ov;
+      info.textContent = `응답 ${state.data.length}${unit} 기준, '${sv.key}' 범주 ${ranked.length}개 중 순위예요. 데이터가 늘어나면 또 바뀔 수도 있어요 😏`;
 
       setTimeout(() => {
-        // 화면에 보이는 반올림 값 기준으로 판정 (반올림 시 같아 보이면 무승부 처리)
-        const gR = round1(gAvg), rR = round1(rAvg);
-        let result;
-        if (gR === rR) result = 'TIE';
-        else result = gR > rR ? 'O' : 'X';
-
         if (result === 'TIE') {
           stamp.textContent = '🤝';
           resultLeft.classList.add('tie');
-          resultSentence.textContent = `${sv.value} · ${ov} 두 그룹의 ${mLabel}${josaIGa(mLabel)} 거의 같았어요! 무승부예요 🤝`;
+          resultSentence.textContent = `${sv.value} · ${ov} 두 범주가 공동 1위예요! ${mLabel}${josaIGa(mLabel)} 거의 같았어요 🤝`;
           sound.tie();
         } else if (result === 'O') {
           stamp.textContent = '⭕';
           resultLeft.classList.add('ok');
-          resultSentence.textContent = `${sv.value}${josaEunNeun(sv.value)} ${mLabel}${josaIGa(mLabel)} 정말 더 ${stem}았어요!`;
+          resultSentence.textContent = compareEntry
+            ? `${sv.value}${josaEunNeun(sv.value)} ${mLabel}${josaIGa(mLabel)} 진짜 1등이었어요! (2등: ${ov})`
+            : `${sv.value}${josaEunNeun(sv.value)} ${mLabel}${josaIGa(mLabel)} 정말 더 ${stem}았어요!`;
           sound.ding(); spawnConfetti(confettiLayer);
         } else {
           stamp.textContent = '❌';
           resultLeft.classList.add('no');
-          resultSentence.textContent = `${sv.value}${josaEunNeun(sv.value)} ${mLabel}${josaIGa(mLabel)} 더 ${stem}지는 않았어요!`;
+          resultSentence.textContent = `${sv.value}${josaEunNeun(sv.value)} ${mLabel}${josaIGa(mLabel)} 가장 ${stem}지는 않았어요! 사실 1등은 '${ov}'예요!`;
           sound.buzz();
         }
         stamp.classList.add('show');
